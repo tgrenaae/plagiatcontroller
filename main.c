@@ -1,12 +1,25 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
+
+typedef struct plagiat{
+    char text[1000];
+    char match_text[1000];
+    int line;
+    int match_line;
+    int word;
+    int match_word;
+} plagiat;
 
 void runcontrol(void);
 char *loadfile(char *fp, size_t *size);
 size_t calcarray(FILE *fp);
 char **preprocessing(char *txt, size_t txtsize, int *sentencecount);
-
+plagiat *verbatim(char **sentences1, int scount1, char** sentences2, int scount2, int *verbplag);
+plagiat *cryptic(char **sentences1, int scount1, char **sentences2, int scount2, int *crypplag);
+static int editDist (const char * string_one, const char * string_two);
+void evaluation(plagiat *verbatims, int verbplag, plagiat *cryptics, int crypplag);
 
 int main(void){
     runcontrol();
@@ -27,12 +40,13 @@ void runcontrol(void){
     char **sentences1 = preprocessing(txt1, sizefp1, &scount1);
     char **sentences2 = preprocessing(txt2, sizefp2, &scount2);
     
-    for(int i = 0; i < scount1; i++){
-        printf("#%d:\n%s\n", i+1, sentences1[i]);
-    }
-    for(int i = 0; i < scount2; i++){
-        printf("#%d:\n%s\n", i+1, sentences2[i]);
-    }
+    int verbplag = 0;
+    plagiat *verbatims = verbatim(sentences1, scount1, sentences2, scount2, &verbplag);
+
+    int crypplag = 0;
+    plagiat *cryptics = cryptic(sentences1, scount1, sentences2, scount2, &crypplag);
+
+    evaluation(verbatims, verbplag, cryptics, crypplag);
     return;
 }
 
@@ -121,3 +135,126 @@ char **preprocessing(char *txt, size_t txtsize, int *sentencecount){
     return sentences;
 }
 
+plagiat *verbatim(char **sentences1, int scount1, char** sentences2, int scount2, int *verbplag){
+    int verbi[100];
+    int verbj[100];
+
+    for(int i = 0; i < scount1; i++){
+        for(int j = 0; j < scount2; j++){
+            if(strlen(sentences1[i]) == strlen(sentences2[j])){
+                int charcount = 0;
+                for(int k = 0; k < (int) strlen(sentences1[i]); k++){
+                    if(sentences1[i][k] == sentences2[j][k]){
+                        charcount++;
+                    }
+                }
+                if(charcount == (int) strlen(sentences1[i])){
+                    verbi[*verbplag] = i;
+                    verbj[*verbplag] = j;
+                    *verbplag = *verbplag + 1;
+                }
+            }
+        }
+    }
+    plagiat *verbatims = (plagiat *) malloc(*verbplag * sizeof(plagiat));
+    if(verbatims == NULL){
+        printf("fail5\n");
+        exit(EXIT_FAILURE);
+    }
+
+    for(int i = 0; i < *verbplag; i++){
+        strcpy(verbatims[i].text, sentences1[verbi[i]]);
+        strcpy(verbatims[i].match_text, sentences2[verbj[i]]);
+        verbatims[i].line = verbi[i]+1;
+        verbatims[i].match_line = verbj[i]+1;
+    }
+    return verbatims;
+}
+
+plagiat *cryptic(char **sentences1, int scount1, char **sentences2, int scount2, int *crypplag){
+    int crypi[100];
+    int crypj[100];
+    for(int i = 0; i < scount1; i++){
+        for(int j = 0; j < scount2; j++){            
+            int levenshtein = editDist(sentences1[i], sentences2[j]);
+            if(levenshtein == 2 || (levenshtein < 6 && levenshtein != 0)){
+                crypi[*crypplag] = i;
+                crypj[*crypplag] = j;
+                *crypplag = *crypplag + 1;
+            }
+
+        }
+        
+    }
+
+    plagiat *cryptics = malloc(*crypplag * sizeof(plagiat));
+    if(cryptics == NULL){
+        printf("fail6");
+        exit(EXIT_FAILURE);
+    }
+
+    for(int i = 0; i < *crypplag; i++){
+        strcpy(cryptics[i].text, sentences1[crypi[i]]);
+        strcpy(cryptics[i].match_text, sentences2[crypj[i]]);
+        cryptics[i].line = crypi[i]+1;
+        cryptics[i].match_line = crypj[i]+1;
+    }
+
+
+    return cryptics;
+}
+
+static int editDist (const char * string_one, const char * string_two)
+{
+    int len1 = strlen(string_one);
+    int len2 = strlen(string_two);
+
+    int matrix[len1 + 1][len2 + 1];
+    int i;
+    for (i = 0; i <= len1; i++) {
+        matrix[i][0] = i;
+    }
+    for (i = 0; i <= len2; i++) {
+        matrix[0][i] = i;
+    }
+    for (i = 1; i <= len1; i++) {
+        int j;
+        char c1 = string_one[i-1];
+        for (j = 1; j <= len2; j++) {
+
+            char c2 = string_two[j-1];
+            if (c1 == c2) {
+                matrix[i][j] = matrix[i-1][j-1];
+            }
+            else {
+                int delete = matrix[i-1][j] + 1;
+                int insert = matrix[i][j-1] + 1;
+                int substitute = matrix[i-1][j-1] + 1;
+                int minimum = delete;
+                if (insert < minimum) {
+                    minimum = insert;
+                }
+                if (substitute < minimum) {
+                    minimum = substitute;
+                }
+                matrix[i][j] = minimum;
+            }
+        }
+    }
+    return matrix[len1][len2];
+}
+
+void evaluation(plagiat *verbatims, int verbplag, plagiat *cryptics, int crypplag){
+    printf("------------VERBATIM found %d matches:----------------\n", verbplag);
+    for(int i = 0; i < verbplag; i++){
+        printf("verbatim #%d:\n'%s' on line %d\n", i+1, verbatims[i].text, verbatims[i].line);
+        printf("'%s' on line %d\n\n", verbatims[i].match_text, verbatims[i].match_line);        
+    }
+
+    printf("------------ CRYPTIC found %d matches:----------------\n", crypplag);
+    for(int i = 0; i < crypplag; i++){
+        printf("cryptic #%d:\n'%s' on line %d\n", i+1, cryptics[i].text, cryptics[i].line);
+        printf("'%s' on line %d\n\n", cryptics[i].match_text, cryptics[i].match_line);        
+    }
+    return;
+}
